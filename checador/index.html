@@ -620,8 +620,14 @@ const CORREOS = [
 ];
 const OTRO = '__otro';
 const selEmail = $('#lEmail');
-CORREOS.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; selEmail.appendChild(o); });
-{ const o = document.createElement('option'); o.value = OTRO; o.textContent = 'Otro correo…'; selEmail.appendChild(o); }
+// La lista junta los correos fijos de arriba + los que ya entraron en este celular (se agregan solos).
+const todosCorreos = () => [...new Set([...CORREOS, ...store.get('sisero_correos', [])].map(c => c.toLowerCase()))].sort();
+function llenarLista() {
+  selEmail.innerHTML = '<option value="">— Selecciona el correo —</option>';
+  todosCorreos().forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; selEmail.appendChild(o); });
+  const o = document.createElement('option'); o.value = OTRO; o.textContent = 'Otro correo…'; selEmail.appendChild(o);
+}
+llenarLista();
 const claves = { get: () => store.get('sisero_claves', {}), set: v => store.set('sisero_claves', v) };
 function correoElegido() { return (selEmail.value === OTRO ? $('#lEmailOtro').value : selEmail.value).trim().toLowerCase(); }
 selEmail.onchange = () => {
@@ -632,7 +638,7 @@ selEmail.onchange = () => {
 };
 $('#lEmailOtro').oninput = () => { const g = claves.get()[correoElegido()]; if (g) { $('#lPass').value = g; $('#lRecordar').checked = true; } };
 // Si este celular ya usó un correo, lo deja preseleccionado
-{ const ult = store.get('sisero_ultimo_correo', ''); if (ult && CORREOS.includes(ult)) { selEmail.value = ult; selEmail.onchange(); } }
+{ const ult = store.get('sisero_ultimo_correo', ''); if (ult && todosCorreos().includes(ult)) { selEmail.value = ult; selEmail.onchange(); } }
 
 let modoAlta = false;
 $('#lAlta').onclick = () => { modoAlta = !modoAlta; $('#lBtn').textContent = modoAlta ? 'Crear acceso' : 'Entrar'; $('#lAlta').textContent = modoAlta ? 'Ya tengo acceso: entrar' : 'Primera vez en este celular: crear acceso'; $('#lPass').autocomplete = modoAlta ? 'new-password' : 'current-password'; $('#lMsg').hidden = true; };
@@ -652,6 +658,7 @@ $('#fLogin').onsubmit = async e => {
       if (error) throw error;
     }
     store.set('sisero_ultimo_correo', email);
+    store.set('sisero_correos', [...new Set([...store.get('sisero_correos', []), email])]);
     { const c = claves.get(); if ($('#lRecordar').checked) c[email] = password; else delete c[email]; claves.set(c); }
     await iniciar();
   } catch (err) {
@@ -671,7 +678,7 @@ async function salirSesion() {
   $('#q').value = ''; $('#lista').innerHTML = ''; $('#bEmail').textContent = '';
   modoAlta = false; $('#lBtn').textContent = 'Entrar'; $('#lAlta').textContent = 'Primera vez en este celular: crear acceso';
   $('#lMsg').hidden = true; $('#lPass').value = ''; $('#lRecordar').checked = false;
-  selEmail.value = ''; $('#lOtroBox').hidden = true; $('#lEmailOtro').value = '';
+  llenarLista(); selEmail.value = ''; $('#lOtroBox').hidden = true; $('#lEmailOtro').value = '';
   ver('vLogin');
 }
 $('#ssSalir').onclick = salirSesion;
