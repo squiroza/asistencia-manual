@@ -172,6 +172,7 @@ dialog::backdrop{background:rgba(7,29,58,.45)}
     <button class="nav" data-sec="elementos">Elementos</button>
     <button class="nav" data-sec="servicios">Servicios</button>
     <button class="nav" data-sec="celulares">Celulares</button>
+    <button class="nav" data-sec="borrados">Borrados</button>
     <div class="who"><span id="whoEmail"></span><button class="btn sm outline" id="instalar" type="button" hidden>Instalar app</button><button class="btn sm" id="salir" type="button">Salir</button></div>
   </nav>
 
@@ -215,6 +216,24 @@ dialog::backdrop{background:rgba(7,29,58,.45)}
         <table style="min-width:980px">
           <thead><tr><th>Foto</th><th>Fecha</th><th>Hora</th><th>Tipo</th><th>Turno</th><th>Elemento</th><th>Puesto</th><th>Servicio</th><th>Ubicación</th></tr></thead>
           <tbody id="aBody"><tr><td colspan="9" class="empty">Cargando registros…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ================= BORRADOS ================= -->
+    <section id="secBorrados" hidden style="display:flex;flex-direction:column;gap:18px">
+      <div class="head">
+        <div><h1>Registros borrados</h1><div class="sub">Copia de lo que se borró de Asistencia · puedes restaurarlo</div></div>
+        <span class="tag mut" id="bVivo"></span>
+      </div>
+      <div class="card filters">
+        <label class="f">Borrados en<select id="bDias"><option value="1">Últimas 24 horas</option><option value="7" selected>Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option><option value="365">Último año</option></select></label>
+        <button class="btn outline" id="bRecargar" type="button">Actualizar</button>
+      </div>
+      <div class="card tablebox">
+        <table style="min-width:980px">
+          <thead><tr><th>Foto</th><th>Registro</th><th>Tipo</th><th>Turno</th><th>Elemento</th><th>Servicio</th><th>Borrado</th><th></th></tr></thead>
+          <tbody id="bBody"><tr><td colspan="8" class="empty">Cargando…</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -556,7 +575,7 @@ const etiquetaEmp = e => e.nombre + (e.numero ? ' · No. ' + e.numero : '') + (e
 const empPorEtiqueta = t => { t = (t || '').trim(); if (!t) return null; return empleados.find(e => etiquetaEmp(e) === t) || empleados.find(e => norm(e.nombre) === norm(t)) || undefined; };
 
 /* ---------- navegación ---------- */
-const secs = { asistencia: '#secAsistencia', nocturna: '#secNocturna', cobertura: '#secCobertura', coberturaNoche: '#secCobertura', elementos: '#secElementos', servicios: '#secServicios', celulares: '#secCelulares' };
+const secs = { asistencia: '#secAsistencia', nocturna: '#secNocturna', cobertura: '#secCobertura', coberturaNoche: '#secCobertura', elementos: '#secElementos', servicios: '#secServicios', celulares: '#secCelulares', borrados: '#secBorrados' };
 function ir(sec) {
   Object.values(secs).forEach(s => { $(s).hidden = s !== secs[sec]; });
   $$('nav.side button.nav').forEach(b => b.setAttribute('aria-current', b.dataset.sec === sec ? 'page' : 'false'));
@@ -565,6 +584,7 @@ function ir(sec) {
   if (sec === 'elementos') pintarElementos();
   if (sec === 'servicios') pintarServicios();
   if (sec === 'celulares') pintarCelulares();
+  if (sec === 'borrados') cargarBorrados();
   try { history.replaceState(null, '', '#' + sec); } catch (e) {}
 }
 $$('nav.side button.nav').forEach(b => b.onclick = () => ir(b.dataset.sec));
@@ -702,6 +722,51 @@ async function borrarRegistro(r) {
   if (!$('#secNocturna').hidden) cargarNoc();
   if (!$('#secCobertura').hidden) cargarCob();
 }
+/* =================== BORRADOS =================== */
+let borrados = [];
+async function cargarBorrados() {
+  const B = $('#bBody');
+  B.innerHTML = '<tr><td colspan="8" class="empty">Cargando…</td></tr>';
+  const { data, error } = await sb.rpc('listar_registros_borrados', { p_dias: +$('#bDias').value });
+  if (error) {
+    const m = error.message || '';
+    B.innerHTML = `<tr><td colspan="8" class="empty">No se pudo cargar: ${esc(/listar_registros_borrados|schema cache/i.test(m) ? 'falta correr sql/9_registros_borrados.sql en Supabase.' : m)}</td></tr>`;
+    return;
+  }
+  borrados = data || [];
+  $('#bVivo').textContent = `${borrados.length} borrado${borrados.length === 1 ? '' : 's'}`;
+  if (!borrados.length) { B.innerHTML = '<tr><td colspan="8" class="empty">No hay registros borrados en este periodo.</td></tr>'; return; }
+  B.innerHTML = borrados.map((r, i) => {
+    const d = new Date(r.fecha_hora), b = new Date(r.borrado_en);
+    return `<tr>
+      <td><button class="thumb" type="button" data-i="${i}">${r.foto_path ? '…' : '—'}</button></td>
+      <td class="mono">${fFecha.format(d)}<div>${fHora.format(d)}</div></td>
+      <td><span class="pill ${esc(r.tipo)}">${esc(r.tipo)}</span></td>
+      <td class="mono">${esc(r.turno || '—')}</td>
+      <td><b style="font-weight:600">${esc(r.empleado || '—')}</b><div class="sub" style="font-size:13px">${esc(r.puesto || '')}</div></td>
+      <td>${esc(r.servicio || '—')}</td>
+      <td class="mono">${fFecha.format(b)} ${fHM.format(b)}<div class="sub" style="font-size:12px;font-family:var(--body)">${esc(r.borrado_por || '')}</div></td>
+      <td style="text-align:right"><button class="btn sm" type="button" data-rest="${i}">Restaurar</button></td></tr>`;
+  }).join('');
+  $$('#bBody button[data-rest]').forEach(b => b.onclick = () => restaurarRegistro(borrados[+b.dataset.rest]));
+  const get = await urlsFirmadas(borrados.map(r => r.foto_path));
+  $$('#bBody .thumb').forEach(b => { const r = borrados[+b.dataset.i]; const u = r && get(r.foto_path); if (u) { b.innerHTML = `<img src="${u}" alt="Foto" loading="lazy">`; b.onclick = () => verFoto(u); } });
+}
+async function restaurarRegistro(r) {
+  if (!r) return;
+  const d = new Date(r.fecha_hora);
+  if (!confirm(`¿Restaurar este registro?\n\n${r.tipo} · ${r.empleado}\n${r.servicio}\n${fFecha.format(d)} ${fHora.format(d)}\n\nVuelve a aparecer en Asistencia, reportes y cobertura.`)) return;
+  const { error } = await sb.rpc('restaurar_registro', { p_id: String(r.id) });
+  if (error) {
+    const m = error.message || '';
+    alert('No se pudo restaurar: ' + (/NO_ADMIN/.test(m) ? 'esta cuenta no es administrador.' : /REGISTRO_NO_ENCONTRADO/.test(m) ? 'el registro ya no está en borrados.' : /restaurar_registro|schema cache/i.test(m) ? 'falta correr sql/9_registros_borrados.sql en Supabase.' : m));
+    return;
+  }
+  await cargarBorrados(); cargarRegistros();
+}
+$('#bDias').onchange = cargarBorrados;
+$('#bRecargar').onclick = cargarBorrados;
+
 function escucharEnVivo() {
   if (canal) sb.removeChannel(canal);
   let t = null;
