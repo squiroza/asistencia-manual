@@ -77,6 +77,10 @@ tr:last-child td{border-bottom:0}
 .pill.on{background:var(--ok-bg);color:var(--ok)} .pill.off{background:#ececec;color:var(--muted)}
 .tag{font-size:12.5px;font-weight:600}
 .tag.warn{color:var(--warn)} .tag.ok{color:var(--ok)} .tag.bad{color:var(--bad)} .tag.mut{color:var(--muted)}
+th[data-ord]{cursor:pointer;-webkit-user-select:none;user-select:none;white-space:nowrap}
+th[data-ord]:hover{color:var(--navy)}
+th[data-ord][aria-sort=ascending]::after{content:' ▲';font-size:10px}
+th[data-ord][aria-sort=descending]::after{content:' ▼';font-size:10px}
 td[data-borrar],td[data-bn]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .thumb{width:44px;height:52px;border-radius:6px;background:#dfe7f1;display:grid;place-items:center;overflow:hidden;border:0;padding:0;color:var(--navy);font-size:10px;font-weight:600}
 .thumb img{width:100%;height:100%;object-fit:cover}
@@ -377,11 +381,13 @@ dialog::backdrop{background:rgba(7,29,58,.45)}
       <div style="display:flex;flex-wrap:wrap;gap:12px">
         <label class="f" style="flex:2 1 260px"><span class="sr" hidden>Buscar</span><input id="eQ" type="search" placeholder="Buscar por nombre o número"></label>
         <label class="f" style="flex:1 1 200px"><select id="eServ"><option value="">Todos los servicios</option></select></label>
+        <label class="f" style="flex:1 1 170px"><select id="ePuesto"><option value="">Todos los puestos</option></select></label>
+        <label class="f" style="flex:1 1 150px"><select id="eTurno"><option value="">Todos los turnos</option><option>24x24 A</option><option>24x24 B</option><option>24x24</option><option>12x12 D</option><option>12x12 N</option><option>12x24</option><option>12x36</option><option value="__sin">Sin turno fijo</option></select></label>
         <label class="f" style="flex:0 1 170px"><select id="eEst"><option value="1">Solo activos</option><option value="">Activos y bajas</option></select></label>
       </div>
       <div class="card tablebox">
         <table style="min-width:760px">
-          <thead><tr><th>Elemento</th><th>No.</th><th>Puesto</th><th>Servicio base</th><th>Turno</th><th>Teléfono</th><th>Estado</th><th></th></tr></thead>
+          <thead id="eHead"><tr><th data-ord="nombre">Elemento</th><th data-ord="numero">No.</th><th data-ord="puesto">Puesto</th><th data-ord="servicio">Servicio base</th><th data-ord="turno">Turno</th><th data-ord="telefono">Teléfono</th><th data-ord="estado">Estado</th><th></th></tr></thead>
           <tbody id="eBody"></tbody>
         </table>
       </div>
@@ -1445,12 +1451,26 @@ $('#kPdf').onclick = async () => {
 };
 
 /* =================== ELEMENTOS =================== */
-['#eQ', '#eServ', '#eEst'].forEach(s => $(s).addEventListener('input', pintarElementos));
+['#eQ', '#eServ', '#ePuesto', '#eTurno', '#eEst'].forEach(s => $(s).addEventListener('input', pintarElementos));
+// Orden: por defecto alfabético por nombre. Clic en un encabezado para ordenar por esa columna (otro clic invierte).
+let eOrd = { k: 'nombre', d: 1 };
+const eClave = { nombre: e => e.nombre, numero: e => e.numero || '', puesto: e => e.puesto || '', servicio: e => nombreServ(e.servicio_base_id) || 'zzz', turno: e => e.turno || 'zzz', telefono: e => e.telefono || '', estado: e => (e.activo ? '0' : '1') };
+const cmpEs = (a, b) => String(a).localeCompare(String(b), 'es', { numeric: true, sensitivity: 'base' });
+function marcarOrden() { $$('#eHead th[data-ord]').forEach(th => th.setAttribute('aria-sort', th.dataset.ord === eOrd.k ? (eOrd.d === 1 ? 'ascending' : 'descending') : 'none')); }
+$$('#eHead th[data-ord]').forEach(th => th.onclick = () => { eOrd = { k: th.dataset.ord, d: eOrd.k === th.dataset.ord ? -eOrd.d : 1 }; pintarElementos(); });
+
 async function pintarElementos() {
   const q = norm($('#eQ').value.trim()), sv = $('#eServ').value, solo = $('#eEst').value === '1';
+  // Lista de puestos que existen (se actualiza sola al dar de alta nuevos)
+  { const sp = $('#ePuesto'), v = sp.value, ps = [...new Set(empleados.map(e => (e.puesto || '').trim()).filter(Boolean))].sort(cmpEs), h = ps.join('|');
+    if (sp.dataset.ps !== h) { sp.dataset.ps = h; sp.innerHTML = '<option value="">Todos los puestos</option>' + ps.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join(''); if (ps.includes(v)) sp.value = v; } }
+  const pu = $('#ePuesto').value, tu = $('#eTurno').value;
+  marcarOrden();
   const act = empleados.filter(e => e.activo).length;
   $('#eSub').textContent = `${act} activos en ${new Set(empleados.filter(e => e.activo && e.servicio_base_id).map(e => e.servicio_base_id)).size} servicios · solo los activos aparecen en el checador`;
-  const lista = empleados.filter(e => (!solo || e.activo) && (!sv || e.servicio_base_id === sv) && (!q || norm(e.nombre).includes(q) || (e.numero || '').includes(q)));
+  const lista = empleados.filter(e => (!solo || e.activo) && (!sv || e.servicio_base_id === sv) && (!pu || (e.puesto || '').trim() === pu) && (!tu || (tu === '__sin' ? !e.turno : e.turno === tu)) && (!q || norm(e.nombre).includes(q) || (e.numero || '').includes(q)))
+    .sort((a, b) => eOrd.d * cmpEs(eClave[eOrd.k](a), eClave[eOrd.k](b)) || cmpEs(a.nombre, b.nombre));
+  $('#eSub').textContent += ` · Mostrando ${lista.length} de ${empleados.length}`;
   const B = $('#eBody');
   if (!lista.length) { B.innerHTML = `<tr><td colspan="8" class="empty">${empleados.length ? 'Nadie coincide con la búsqueda.' : 'Todavía no hay elementos. Da de alta el primero con el botón de arriba.'}</td></tr>`; return; }
   B.innerHTML = lista.map(e => `<tr>
