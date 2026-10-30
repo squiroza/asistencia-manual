@@ -290,7 +290,8 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'x' + Date.now().t
 
 let info = store.get('sisero_info', null);       // servicio del celular
 let elementos = store.get('sisero_elementos', []);
-const TURNOS = ['12x12 D', '12x12 N', '24x24', '12x24', '12x36'];
+const TURNOS = ['12x12 D', '12x12 N', '24x24 A', '24x24 B', '24x24', '12x24', '12x36'];
+const TURNOS_FIJOS = ['24x24 A', '24x24 B', '24x24', '12x24', '12x36']; // si el elemento tiene uno de estos, se propone ese (no el 12x12 por hora)
 let turno = null;
 let sel = null, tipo = 'Entrada', foto = null, gps = null, enviando = false, cuentaTimer = null;
 const fotosAlta = new Map();
@@ -382,7 +383,7 @@ function setTipo(t) {
 }
 const fHoraNum = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', hour12: false });
 function turnoSugerido(e) {
-  if (e && ['24x24', '12x24', '12x36'].includes(e.turno)) return e.turno;
+  if (e && TURNOS_FIJOS.includes(e.turno)) return e.turno;
   const h = parseInt(fHoraNum.format(new Date()), 10) % 24;
   return h >= 5 && h <= 16 ? '12x12 D' : '12x12 N';
 }
